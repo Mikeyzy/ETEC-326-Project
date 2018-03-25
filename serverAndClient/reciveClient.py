@@ -1,6 +1,6 @@
 #!python3
 
-import socket, sys
+import socket, sys, time, threading
 from random import randint
 
 cfgFileName = 'recive.cfg'
@@ -9,6 +9,12 @@ myID = None
 myPW = None
 serverAddress = None
 serverPort = None
+
+_DEBUG = True
+
+def debug(*args, sep=' ', end='\n'):
+    if _DEBUG:
+        print(*args, sep=sep, end=end)
 
 def readCFG():
     global myID, myPW, serverAddress, serverPort
@@ -32,6 +38,13 @@ def createCFG():
     cfgFile.write("do not change the order, format: XX=xxxx;comment\n")
     cfgFile.close()
 
+def updateState(commands):
+    pass
+
+def readDistance():
+    distance = 0
+    return distance
+
 def main():
     global myID, myPW
     try:
@@ -40,33 +53,56 @@ def main():
         createCFG()
         readCFG()
     finally:
-        print('initialized with ID', myID, ', password', myPW)
-    # Create a TCP/IP socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        debug('initialized with ID', myID, ', password', myPW)
 
-    # Connect the socket to the port where the server is listening
-    server_address = ('localhost', 5000)
-    print('connecting to {} port {}'.format(*server_address))
-    sock.connect(server_address)
+    ConThread = threadSock()
+    ConThread.start()
     try:
-        # Send data
-        credential = 'type=reciver,id='+myID+',pw='+myPW
-        data = bytearray(credential,'ascii')
-        #print('sending {!r}'.format(message))
-        sock.sendall(data)
-
-        data = sock.recv(256)
-        print(str(data))
-
         while True:
-            data = sock.recv(256)
-            print('recived: '+ data.decode('ascii'))
-            if data == b'quit':
-                break
-        
-    finally:
-        print('closing socket')
-        sock.close()
+            pass
+    except:
+        ConThread._IR = False
+
+class threadSock (threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self._IR = True
+    def run(self):
+        global serverAddress, serverPort
+        self.sockR = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serverAddressR = (serverAddress, serverPort)
+        credential = 'reciver;'+myID+';'+myPW
+        data = bytearray(credential,'ascii')
+        while self._IR:
+            try:
+                self.sockR.connect(serverAddressR)
+                self.sockR.sendall(data)
+                rawData = self.sockR.recv(256)
+                dataRecived = rawData.decode('ascii')
+                if '#usedIDError#' in dataRecived:
+                    debug('Same ID already been used.')
+                    self.sockR.close()
+                    continue
+                if 'accept' not in dataRecived:
+                    debug('host rejected the connection')
+                    self.sockR.close()
+                    continue
+            except Exception:
+                #raise(Exception)
+                debug('failed to connect to the host')
+                time.sleep(10)
+                continue
+            debug('accepted')
+            while True:
+                rawData = self.sockR.recv(256)
+                dataRecived = rawData.decode('ascii')
+                debug('recived:',dataRecived)
+                data = str(readDistance())
+                rawData = bytearray(data,'ascii')
+                self.sockR.sendall(rawData)
+            self.sockR.close()
+            break
+
 
 if __name__ == "__main__":
     main()
