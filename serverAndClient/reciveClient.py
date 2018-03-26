@@ -78,12 +78,12 @@ class threadSock (threading.Thread):
                 self.sockR.connect(serverAddressR)
                 self.sockR.sendall(data)
                 rawData = self.sockR.recv(256)
-                dataRecived = rawData.decode('ascii')
-                if '#usedIDError#' in dataRecived:
+                dataR = rawData.decode('ascii')
+                if '#usedIDError#' in dataR:
                     debug('Same ID already been used.')
                     self.sockR.close()
                     continue
-                if 'accept' not in dataRecived:
+                if 'accept' not in dataR:
                     debug('host rejected the connection')
                     self.sockR.close()
                     continue
@@ -94,11 +94,17 @@ class threadSock (threading.Thread):
                 continue
             debug('accepted')
             while True:
-                rawData = self.sockR.recv(256)
-                dataRecived = rawData.decode('ascii')
-                debug('recived:',dataRecived)
-                data = str(readDistance())
-                rawData = bytearray(data,'ascii')
+                rawData = self.sockR.recv(1024)
+                dataR = rawData.decode('ascii')
+                if '#idle#' in dataR:
+                    debug('Idle')
+                    dataT = '#ok#'
+                    rawData = bytearray(dataT,'ascii')
+                else:
+                    debug('recived:',dataR)
+                    updateState(dataR)
+                    dataT = str(readDistance())
+                    rawData = bytearray(dataT,'ascii')
                 self.sockR.sendall(rawData)
             self.sockR.close()
             break

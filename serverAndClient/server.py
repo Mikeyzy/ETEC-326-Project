@@ -6,13 +6,13 @@ cfgFileName = 'server.cfg'
 
 threadList = []
 
-ServerPort = None
+serverPort = None
 
 def readCFG():
-    global portRecive, portControl
+    global serverPort
     cfgFile = open(cfgFileName, 'r')
     temp = cfgFile.readline()
-    ServerPort = int(temp[11:temp.index(';')])
+    serverPort = int(temp[11:temp.index(';')])
     cfgFile.close()
 
 def createCFG():
@@ -30,8 +30,8 @@ def main():
     timerThread = timer()
     timerThread.start()
     threadList.append(timerThread)
-    reciverProcesser = threadSockR()
-    reciverProcesser.start()
+    thrdSock = threadSock()
+    thrdSock.start()
     try:
         while True:
             pass
@@ -46,18 +46,26 @@ class reciverObject:
         self.rt = 0.0       #right track
         self.ch = 0.0       #camera horizontal
         self.cv = 0.0       #camera vertical
+        self.rearDistance = 0.0
         self.ltMax = 0.0
         self.rtMax = 0.0
         self.cSens = 1.0
         self.inUse = False
-        self.ID = reciverID
-        self.PW = reciverPW
+        self.Name = reciverID
+        self.Password = reciverPW
         self.Connection = connection
     def connect(self, reciverID, reciverPW):
-        if self.ID == reciverID && self.PW == reciverPW:
+        if self.inUse:
+            return False
+        elif self.Name == reciverID and self.Password == reciverPW:
+            self.inUse = True
+            self.Connection.settimeout(0.5)
             return True
         else:
             return False
+    def disconnect(self):
+        self.inUse = False
+        self.Connection.settimeout(None)
     def set(self, lmax, rmax, sens):
         self.ltMax = lmax
         self.rtMax = rmax
@@ -93,35 +101,43 @@ class timer (threading.Thread):
             self.sendTimer += 1
             time.sleep(1/1000.0)
 
-class threadConnectionR (threading.Thread):
-    def __init__(self, connection):
+class threadReciver (threading.Thread):
+    def __init__(self, reciver, parent):
         threading.Thread.__init__(self)
         self._IR = True
-        self.conn = connection
+        self.Reciver = reciver
+        self.Parent = parent
+        self.Connection = reciver.Connection
+        self.IDLE = True
     def run(self):
-        rawData = self.conn.recv(256)
-        data = rawData.decode('ascii')
-        dataList = data.split(';')
-        if dataList[0] == 'reciver':
-            reciverID = dataList[1]
-            reciverPW = dataList[2]
-            self.conn.sendall(b'accept')
-        self.conn.sendall(b'accept')
         while self._IR:
-            data = input('input:')
-            rawData = bytearray(data, 'ascii')
-            self.conn.sendall(rawData)
-
-        self.conn.close()
+            try:
+                if self.IDLE:
+                    self.Connection.sendall(bytearray('#idle#','ascii'))
+                    rawData = self.Connection.recv(1024)
+                    time.sleep(2)
+                else:
+                    dataT = self.Reciver.getState()
+                    self.Connection.sendall(bytearray(dataT, 'ascii'))
+                    rawData = self.Connection.recv(1024)
+                    dataR = rawData.decode('ascii')
+                    self.Reciver.rearDistance = float(dataR)
+            except TimeoutError:
+                debug('Package Lost')
+            except ConnectionResetError:
+                debug('Connection Lost')
+                self.Parent.reciverThreadList.remove(self)
+                self.Parent.reciverIDList.remove(self.Reciver.Name)
+                self.Parent.reciverObjectList.remove(self.Reciver)
+                break
 
 class threadSock (threading.Thread):
-    def __init__(self, name):
+    def __init__(self):
         threading.Thread.__init__(self)
-        self.name = name
         self._IR = True
         self.reciverIDList = []
         self.reciverObjectList = []
-
+        self.reciverThreadList = []
     def run(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serverAddress = ("0.0.0.0", serverPort)
@@ -135,13 +151,16 @@ class threadSock (threading.Thread):
                 if 'reciver' in data:
                     tempList = data.split(';')
                     if tempList[1] in self.reciverIDList:
-                        conn.sendall(bytearray('This ID is already connected. #idused','ascii'))
+                        conn.sendall(bytearray('This ID is already connected. #usedIDError#','ascii'))
                         conn.close()
                     else:
                         self.reciverIDList.append(tempList[1])
                         tempObject = reciverObject(tempList[1],tempList[2],conn)
                         self.reciverObjectList.append(tempObject)
                         conn.sendall(bytearray('accept','ascii'))
+                        tempThread = threadReciver(tempObject, self)
+                        tempThread.start()
+                        self.reciverThreadList.append(tempThread)
                 elif 'controller' in data:
                     pass
                 else:
