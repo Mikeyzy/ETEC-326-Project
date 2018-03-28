@@ -53,19 +53,22 @@ class reciverObject:
         self.inUse = False
         self.Name = reciverID
         self.Password = reciverPW
-        self.Connection = connection
+        self.ConnectionRec = connection
+        self.ConnectionCtl = None
     def connect(self, reciverID, reciverPW):
         if self.inUse:
             return False
         elif self.Name == reciverID and self.Password == reciverPW:
             self.inUse = True
-            self.Connection.settimeout(0.5)
+            self.ConnectionRec.settimeout(0.5)
             return True
         else:
             return False
     def disconnect(self):
         self.inUse = False
-        self.Connection.settimeout(None)
+        self.ConnectionRec.settimeout(None)
+    def setControl(self, controller):
+        self.ConnectionCtl = controller
     def set(self, lmax, rmax, sens):
         self.ltMax = lmax
         self.rtMax = rmax
@@ -88,6 +91,8 @@ class reciverObject:
             self.cv = 1.0
         else:
             self.cv += cvertical * sens    #camera vertical
+    def updateOthers(laser, sound0, sound1, sound2, sound3, sound4):
+
     def getState(self):
         return str(self.lt)+';'+str(self.rt)+';'+str(self.ch)+';'+str(self.cv)
 
@@ -107,7 +112,7 @@ class threadReciver (threading.Thread):
         self._IR = True
         self.Reciver = reciver
         self.Parent = parent
-        self.Connection = reciver.Connection
+        self.Connection = reciver.ConnectionRec
         self.IDLE = True
     def run(self):
         while self._IR:
@@ -124,12 +129,29 @@ class threadReciver (threading.Thread):
                     self.Reciver.rearDistance = float(dataR)
             except TimeoutError:
                 debug('Package Lost')
-            except ConnectionResetError:
+            except Exception:
                 debug('Connection Lost')
                 self.Parent.reciverThreadList.remove(self)
                 self.Parent.reciverIDList.remove(self.Reciver.Name)
                 self.Parent.reciverObjectList.remove(self.Reciver)
                 break
+
+class threadController (threading.Thread):
+    def __init__(self, reciver, parent):
+        threading.Thread.__init__(self)
+        self._IR = True
+        self.Reciver = reciver
+        self.Parent = parent
+        self.Connection = reciver.ConnectionCtl
+    def run(self):
+        while self._IR:
+            rawData = self.Connection.recv(1024)
+            dataR = rawData.decode('ascii')
+            cList = dataR.split(';') #command list
+            #format:[ltrack,rtrack,chorizontal,cvertical,laser,*sounds...]
+            self.Reciver.updateTrack(cList[0],cList[1])
+            self.Reciver.updateCamera(cList[2],cList[3])
+
 
 class threadSock (threading.Thread):
     def __init__(self):
@@ -138,6 +160,7 @@ class threadSock (threading.Thread):
         self.reciverIDList = []
         self.reciverObjectList = []
         self.reciverThreadList = []
+        self.controllerList = []
     def run(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serverAddress = ("0.0.0.0", serverPort)
@@ -154,15 +177,25 @@ class threadSock (threading.Thread):
                         conn.sendall(bytearray('This ID is already connected. #usedIDError#','ascii'))
                         conn.close()
                     else:
+                        conn.sendall(bytearray('accept','ascii'))
                         self.reciverIDList.append(tempList[1])
                         tempObject = reciverObject(tempList[1],tempList[2],conn)
                         self.reciverObjectList.append(tempObject)
-                        conn.sendall(bytearray('accept','ascii'))
                         tempThread = threadReciver(tempObject, self)
                         tempThread.start()
                         self.reciverThreadList.append(tempThread)
                 elif 'controller' in data:
-                    pass
+                    tempList = data.split(';')
+                    tempObject = self.reciverObjectList[self.reciverIDList.index(tempList[1])]
+                    if tempList[1] in self.reciverIDList:
+                        if(tempObject.connect(tempList[1],tempList[2])):
+                            conn.sendall(bytearray('accept', 'ascii'))
+                            tempThread = threadController(tempObject, self)
+                            tempObject.setControl(tempThread)
+                            self.controllerList.append(tempThread)
+                            tempThread.start()
+                        else:
+                            conn.sendall(bytearray('This ID is already in use or not exist. #usedIDError#','ascii'))
                 else:
                     conn.sendall(bytearray('Connection Refused','ascii'))
                     conn.close()

@@ -14,12 +14,14 @@ serverPort = None
 
 _DEBUG = True
 
+_Connected = False
+
 def debug(*args, sep=' ', end='\n'):
     if _DEBUG:
         print(*args, sep=sep, end=end)
 
 def readCFG():
-    global myID, myPW, serverAddress, serverPort
+    global targetID, targetPW, serverAddress, serverPort
     cfgFile = open(cfgFileName, 'r')
     temp = cfgFile.readline()
     targetID = temp[3:temp.index(';')]
@@ -32,58 +34,72 @@ def readCFG():
     cfgFile.close()
 
 def writeCFG():
+    global targetID, targetPW
     cfgFile = open(cfgFileName, 'w')
     cfgFile.write('ID=' + targetID + ";\n")
     cfgFile.write('PW=' + targetPW + ";\n")
-    cfgFile.write("SA=" + serverAddress + ";\tServer Address, NO SPACE\n")
-    cfgFile.write("SP=" + serverPort + ";\t\tServer Port, DO NOT change unless you know what you are doing\n")
-    cfgFile.write("do not change the order, format: XX=xxxx;comment\n")
+    cfgFile.write("SA=" + serverAddress + ";\n")
+    cfgFile.write("SP=" + serverPort + ";\n")
     cfgFile.close()
 
 def createCFG():
     cfgFile = open(cfgFileName, 'w')
     cfgFile.write('ID=' + str(randint(10,999999)) + ";\n")
     cfgFile.write('PW=' + str(randint(100000,999999)) + ";\n")
-    cfgFile.write("SA=127.0.0.1;  Server Address, NO SPACE\n")
-    cfgFile.write("SP=27002;      Server Port, DO NOT change unless you know what you are doing\n")
-    cfgFile.write("do not change the order, format: XX=xxxx;comment\n")
+    cfgFile.write("SA=127.0.0.1;\n")
+    cfgFile.write("SP=27002;\n")
     cfgFile.close()
 
 def setPW():
+    global targetID, targetPW
     targetID = input('Target ID: ')
     targetPW = input('Target PW: ')
     writeCFG()
+
+def connect():
+    if _Connected:
+        pass
+    else:
+        thrdSock = threadSock()
+
+
+def main():
+
 
 class threadSock (threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self._IR = True
     def run(self):
-        global serverAddress, serverPort
-        self.sockR = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverAddressR = (serverAddress, serverPort)
+        global serverAddress, serverPort, targetID, targetPW, _Connected
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         credential = 'controller;'+targetID+';'+targetPW
-        data = bytearray(credential,'ascii')
+        rawData = bytearray(credential,'ascii')
         try:
-            self.sockR.connect(serverAddressR)
-            self.sockR.sendall(data)
-            rawData = self.sockR.recv(256)
-            dataRecived = rawData.decode('ascii')
+            self.sock.connect(serverAddress, serverPort)
+            self.sock.sendall(rawData)
+            rawData = self.sock.recv(256)
+            dataR = rawData.decode('ascii')
+            if '#usedIDError#' in dataR:
+                debug('This ID is already in use or not exist.')
+                self.sock.close()
             if dataRecived != 'accept':
                 debug('host rejected the connection')
                 print(dataRecived)
-                self.sockR.close()
+                self.sock.close()
         except Exception:
             #raise(Exception)
             debug('failed to connect to the host')
-            time.sleep(10)
-            continue
-        debug('accepted')
-        while self._IR:
-            rawData = self.sockR.recv(256)
-            dataRecived = rawData.decode('ascii')
-            debug('recived:',dataRecived)
-        self.sockR.close()
+        else:
+            debug('accepted')
+            _Connected = True
+            while self._IR:
+                
+                rawData = self.sockR.recv(256)
+                dataR = rawData.decode('ascii')
+                debug(dataR)
+            self.sockR.close()
+            _Connected = False
 
 class threadJoystick (threading.Thread):
     def __init__(self):
@@ -101,4 +117,6 @@ class threadJoystick (threading.Thread):
         joystick = joystickList[int(input('Enter device ID: '))]
 
         win = pyglet.window.Window(width=640, height=480, caption='Key2Joy Key Config')
-        
+
+if __name__ == "__main__":
+    main()

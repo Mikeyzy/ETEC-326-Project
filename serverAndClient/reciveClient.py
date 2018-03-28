@@ -1,6 +1,6 @@
 #!python3
 
-import socket, sys, time, threading
+import socket, sys, time, threading, playsound
 from random import randint
 
 cfgFileName = 'recive.cfg'
@@ -56,12 +56,32 @@ def main():
         debug('initialized with ID', myID, ', password', myPW)
 
     ConThread = threadSock()
+    SoundThread = threadSound()
     ConThread.start()
+    SoundThread.start()
     try:
         while True:
             pass
     except:
         ConThread._IR = False
+
+class threadSound (threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self._IR = True
+        self._EN = False
+        self.Path = ""
+    def run(self):
+        while self._IR:
+            if self._EN:
+                self._EN = False
+                try:
+                    playsound.playsound(self.Path)
+                except:
+                    pass
+    def play(self, path):
+        self.Path = path
+        self._EN = True
 
 class threadSock (threading.Thread):
     def __init__(self):
